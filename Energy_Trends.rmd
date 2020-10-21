@@ -1,0 +1,773 @@
+---
+title: "Energy Trends CDP-ICLEI 2019 Report"
+author: "Einav Grinberg"
+date: "10/2/2020"
+output: 
+  word_document:
+    reference_docx: word-styles-reference-01.docx 
+    keep_md: yes
+    fig_caption: yes
+    fig_width: 12
+    fig_height: 6
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:\\Users\\einav\\Dropbox\\Munster\\ICLEI")
+# install.packages('dplyr')
+# install.packages('ggplot2')
+# install.packages('sf')
+# install.packages('tidyr')
+# install.packages('knitr')
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(tidyr)
+library(knitr)
+library(scales)
+```
+## Exploratory Data Analysis - CDP-ICLEI Report
+
+This data was collected in partnership by CDP and ICLEI - Local Governments for Sustainability.
+
+This dataset contains all data points for all cities reporting publicly in 2019. This is regularly updated automatically and has recent data.
+
+```{r initial data primary evaluation, include=FALSE,results='hide'}
+# read csv data
+data <- read.csv("2019_Full_Cities_Dataset.csv",stringsAsFactors = FALSE, encoding="UTF-8")
+summary(data)
+head(data, n=10)
+```
+
+```{r energy data cleanup, include=FALSE, results='hide'}
+# filter only energy section
+energy_data <- filter(data, Section == 'Energy')
+head(energy_data, n=5)
+# add primary key to data
+energy_data$ID <- seq.int(nrow(energy_data))
+# column names
+names(energy_data)
+# how many NAs?
+sum(is.na(energy_data))
+# define NA for empty response answer values
+energy_data$Response.Answer[energy_data$Response.Answer==""] <-
+NA
+population <- filter(data, Question.Number == '0.5')
+population$Response.Answer[population$Response.Answer==""] <-
+NA
+```
+
+### Primary evaluation of Energy Data 
+
+814 organizations in 93 countries and 8 CDP regions have taken part in this questionnaire. The names of the participating organizations, countries and regions can be viewed in the output (Table 1 & Table 2). The questionnaire is composed of 6 main questions and 5 sub-questions. The questions can be viewed in the output (Table 3). 
+
+```{r energy data evaluation, include=FALSE, results='hide'}
+# check how many questions are there
+#unique(energy_data$Question.Number)
+#count(energy_data, Question.Number) %>% tally()
+# show the questions
+kable(unique(energy_data$Question.Name), caption = "Table 1 - Questionnaire Questions", col.names = "")
+# create regions and countries df for spatial analysis
+countries_regions <- energy_data %>% distinct(Country, CDP.Region, .keep_all = FALSE)
+# create organizations df for spatial analysis
+organizations <- energy_data %>% distinct(Account.Number, Country, CDP.Region, Organization, .keep_all = FALSE)
+#count(organizations)
+kable(unique(organizations$Country), caption = "Table 2 - Questionnaire Countries", col.names = "")
+kable(unique((organizations$CDP.Region)), caption = "Table 3 - CDP Regions", col.names = "")
+```
+
+## Data Analysis of Energy Trends
+
+The main objective of this analysis is to identify renewable energy key performance indicators (KPIs) and trends for the reporting CDP Regions. 
+
+### Question 8.0 - Does your city have a renewable energy or electricity target?
+```{r 8.0,echo=FALSE, message=FALSE, warning=FALSE, fig.retina=2}
+# Regions that have an energy or electricity target
+energy_data %>% filter(Question.Number == "8.0") %>% 
+  group_by(CDP.Region, Response.Answer) %>%
+  tally() %>%
+  ggplot(aes(x=CDP.Region ,y=n, fill=Response.Answer)) +
+  geom_bar(position='dodge', stat='identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25,  size =3,check_overlap = TRUE) +
+  labs(x="CDP Region", y="Number of Organizations",title="Plot 1- Does your city have a renewable energy or electricity target?", subtitle="Aggregated by CDP Region") + 
+  theme(axis.text.x = element_text(angle = 25)) 
+```
+In the first question of the questionnaire, it is clear that most organizations in North America and Europe have a renewable energy or electricity target. There is a large gap between North America and Europe with the next region Latin America, followed by Southeast Asia and Oceania, East Asia and Africa, South and West Asia and lastly the Middle East. Out of 814 organizations 151 did not answer this question. 
+Plot 1 visualizes and summarizes each region's answer. 
+
+### Question 8.0a - Please provide details of your renewable energy or electricity target(s) and how the city plans to meet those targets. Question dependencies - This question is only relevant if question 8.0 was answered as "Yes"
+
+A total of 295 organizations out of 814 answered that they have renewable energy or electricity target (for 39 organizations no answer was logged). The following plots provide a visualization for a table which includes the response options to question 8.0a.
+
+#### Scale of Implementation
+```{r 8.0a scale, echo=FALSE, message=FALSE, warning=FALSE, fig.retina=2}
+# q8.0a
+q8a <- energy_data %>% filter(Question.Number == '8.0a') %>% arrange(Account.Number, Column.Number, Row.Number)
+
+# questions as columns
+new_q8a <-  q8a %>% group_by(Account.Number, Organization) %>% pivot_wider(id_cols = Account.Number, names_from= c(Column.Name, Row.Number), values_from = Response.Answer)
+
+new_q8a <- left_join(organizations, new_q8a, by="Account.Number", keep = FALSE)
+
+
+scale <- q8a %>% filter(Column.Number == 1)
+
+# scale plot
+q8a %>% filter(Column.Number == 1) %>% group_by(CDP.Region, Response.Answer) %>% tally() %>% ggplot(aes(x=CDP.Region ,y=n, fill=Response.Answer)) + geom_bar(position='dodge', stat='identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25,  size =3,check_overlap = TRUE) + labs(x="CDP Region", y="Number of Targets",title="Plot 2- Scale of Target Implementation") + theme(axis.text.x = element_text(angle = 25))
+```
+The majority of the energy targets are set to be implemented in 217 cities compared to 125 local governments and for 9 targets their scale of implementation is not stated. It is important to acknowledge that some organizations have targets for both city-wide and local government operations scale e.g. Ajuntament de Barcelona, Spain. 
+
+#### Energy / Electricity Types Covered by Target   
+```{r 8.0a column2, echo=FALSE, warning=FALSE, message=FALSE, fig.retina=2}
+# type of target
+target <- q8a %>% filter(Column.Number == 2) %>% arrange(Account.Number, CDP.Region, Row.Number)
+
+target$Answer <- ifelse(target$Response.Answer != 'All electricity consumed (in MWh)' & target$Response.Answer != 'All energy produced (in MWh)' & target$Response.Answer != 'Total installed capacity of renewable electricity (in MW)' & target$Response.Answer != 'Total installed capacity of renewable energy (in MW)' & target$Response.Answer != 'All energy consumed (in MWh)' & target$Response.Answer != 'All electricity produced (in MWh)', 'Other', target$Response.Answer)
+
+electricity_b <- filter(target, Answer == 'Total installed capacity of renewable electricity (in MW)' | Answer == 'All electricity consumed (in MWh)' | Answer == 'Total installed capacity of renewable electricity (in MW)' | Answer == 'All electricity produced (in MWh)') %>% arrange(Account.Number, Row.Number)
+electricity_b$ID <- seq(nrow(electricity_b))
+
+target %>% group_by(CDP.Region, Answer) %>%
+  tally() %>%
+  ggplot(aes(x=CDP.Region ,y=n, fill=Answer)) +
+  geom_bar(position='dodge', stat='identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size =3,check_overlap = TRUE) +
+  labs(x="CDP Region", y="Number of Targets",title="Plot 3- Energy / Electricity Types Covered by Target", subtitle="Aggregated by CDP Region") + 
+  theme(axis.text.x = element_text(angle = 25))
+
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(rgeos)
+
+target_c <- target %>% group_by(Country) %>% drop_na() %>%
+  tally()
+
+world2 <- ne_countries(scale = "medium", returnclass = "sf")
+names(world2)[29] = 'Country'
+world2$Country[world2$Country == 'Palestine (West Bank and Gaza)'] = 'State of Palestine'
+world2$Country[world2$Country == 'United Kingdom'] = 'United Kingdom of Great Britain and Northern Ireland'
+world2$Country[world2$Country == 'Taiwan'] = 'Taiwan, Greater China'
+world2$Country[world2$Country == 'Hong Kong SAR, China'] = "China, Hong Kong Special Administrative Region"
+world2$Country[world2$Country == 'Congo, Dem. Rep.'] = "Democratic Republic of the Congo"
+world2$Country[world2$Country == 'Venezuela, RB'] = "Venezuela (Bolivarian Republic of)"
+world2$Country[world2$Country == 'Vietnam'] = "Viet Nam"
+world2$Country[world2$Country == 'Korea, Dem. Rep.'] = "Republic of Korea"
+world2$Country[world2$Country == 'Bolivia'] = "Bolivia (Plurinational State of)"
+world2$Country[world2$Country == 'Tanzania'] = "United Republic of Tanzania"
+
+x <-left_join(countries_regions, world2, by='Country', keep=FALSE)
+y <-left_join(target_c, x, by='Country', keep=FALSE)
+y <- st_sf(y, crs = 4236)
+y <- st_transform(y, 4236)
+
+y %>% group_by(CDP.Region) %>% summarise(total=sum(n)) %>% ggplot() +
+  geom_sf(aes(fill = total)) + borders('world') +
+  scale_fill_viridis_c(name="Number of Targets", direction = -1) + labs(x = NULL, y = NULL, 
+       title = "Map 1- Number of Energy/Electricity Targets", 
+       subtitle = "CDP Region", 
+       caption = "Geometries: 'rnaturalearth' package, 2018") + 
+  theme(legend.position = "bottom")
+
+
+# plans to meet target
+plans <- q8a %>% filter(Column.Number == 10) %>% arrange(Account.Number, CDP.Region, Row.Number)
+
+```
+Plot 3 describes the type of target the organizations have set for the renewable energy goals.
+In total all the CDP Regions have set 334 targets, most of the targets are to change all electricity consumed in $MWh$ and all energy consumed in $MWh$ to renewable energy. Some of the reporting organizations have reported more than one target e.g. Portland, Oregon in North America and Sydney, Australia. Most of the organizations that reported more than one target belong to North America, Europe and Southeast Asia and Oceania.
+Map 1 is colored depending on the number of targets set for each CDP Region, North America leads with a total of 132 targets, Europe with 113 targets, Southeast Asia and Oceania with 31 targets, Latin America with 24 targets, East Asia with 21 targets, Africa with 9 targets, South and West Asia with 8 targets and the Middle East with 3 targets. 
+
+#### Base and Target Year for Target Implementation
+```{r target and base year, echo=FALSE, fig.retina=2}
+#target and base year 
+q8a %>% filter(Column.Number == 3) %>% group_by(CDP.Region, Response.Answer)%>% tally() %>% ggplot(aes(x=Response.Answer, y=n, fill=CDP.Region)) + geom_bar( position = 'dodge', stat = 'identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25,  size =3,check_overlap = TRUE) + labs(x="Year", y="Number of Targets",title="Plot 4- Base Year of Implementation by CDP Region") + theme(axis.text.x = element_text(angle = 25))
+
+q8a %>% filter(Column.Number == 6) %>% group_by(CDP.Region, Response.Answer)%>% tally() %>% ggplot(aes(x=Response.Answer, y=n, fill=CDP.Region)) + geom_bar(position = 'dodge', stat = 'identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size =3,check_overlap = TRUE) + labs(x="Year", y="Number of Targets",title="Plot 5- Target Year of Implementation by CDP Region") + theme(axis.text.x = element_text(angle = 25))
+
+```
+Plot 4 describes the number of targets set for each base year reported by organizations and aggregated by CDP Regions. It is clear that organizations based in Europe and North America have started setting targets earlier than the rest of the reporting regions. The last region to set energy and electricity target is the Middle East. 38 out of 287 targets base year was in 2015, 94 organizations did not report their targets base year.
+
+Plot 5 describes what is the implementation deadline year for the number of targets set. 83 out of 317 targets are intended to be implemented until 2020, with the majority of targets set by Europe and North America. 31 targets are intended to be implemented until 2025, 66 are intended to be implemented until 2030 and 29 targets are intended to be implemented until 2050. 
+
+#### Renewable Energy / Electricity Covered by Target in Base Year in units of MW / MWh
+```{r renewable energy in base year, echo=FALSE, warning=FALSE, message=FALSE, fig.height=8, fig.width=7, fig.align='center', fig.retina=2}
+#Total renewable energy / electricity covered by target in base year (in unit specified in column 3: Energy/electricity types covered by target)
+
+ebase <- q8a %>%  filter(Column.Number == 4) %>% arrange(Account.Number, Row.Number)
+ebase$ID = seq(integer(nrow(ebase)))
+base_year <- q8a %>%  filter(Column.Number == 3) %>% arrange(Account.Number, Row.Number)
+base_year$ID = seq(integer(nrow(base_year)))
+
+ebaseyear <- left_join(ebase,base_year, by='ID')
+
+stats_e <- ebase %>% group_by(CDP.Region) %>% summarise(avg = mean(as.numeric(Response.Answer), na.rm = TRUE), sd = sd(as.numeric(Response.Answer), na.rm=TRUE), total = sum(as.numeric(Response.Answer), na.rm = TRUE), n=n())
+
+stats_e$impact_ratio = (stats_e$total / sum(stats_e$total))
+
+sample_size = ebase %>% group_by(CDP.Region) %>% summarize(num=n())
+
+ebase %>% left_join(sample_size) %>%
+  mutate(myaxis = paste0(CDP.Region, "\n", "n=", num)) %>% ggplot(aes(x=myaxis, y=as.numeric(Response.Answer), fill=CDP.Region)) + geom_boxplot() +
+    theme(legend.position="none") + facet_wrap(~CDP.Region, scale="free") + scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x), labels = trans_format("log10", math_format(10^.x))) +
+    geom_jitter(color="black", size=0.5, alpha=0.9) + labs(x="CDP Region", y="Energy/Electricity (MWh)", title = "Plot 6- Boxplot of Renewable Energy/Electricity Covered \nby Target in Base Year", subtitle = "Log 10 Transformation")
+
+electricityby <- left_join(electricity_b, ebase, by='ID', keep=FALSE)
+stats_eleby <- electricityby %>% group_by(CDP.Region.y) %>% summarise(avg = mean(as.numeric(Response.Answer.y), na.rm = TRUE), sd = sd(as.numeric(Response.Answer.y), na.rm=TRUE), total = sum(as.numeric(Response.Answer.y), na.rm = TRUE), n=n())
+
+stats_eleby$impact_ratio = (stats_eleby$total / sum(stats_eleby$total))
+```
+Plot 6 consist of boxplots that summarize the distribution of the renewable energy and electricity in $MWh$ covered by target in base year for each CDP Region. The boxplots are displayed using the log 10 transformation to stabilize the variation within CDP Regions.The organizations within the CDP Regions present a wide distribution with some organizations setting very high renewable energy / electricity targets and others low renewable energy / electricity targets.(n=the number of targets) 
+
+```{r renewable energy in base year2, echo=FALSE, warning=FALSE, message=FALSE, fig.retina=2}
+f = ebaseyear %>% group_by(CDP.Region.x,Response.Answer.x, Response.Answer.y) %>% tally() 
+f = na.omit(f)
+f <- f %>% group_by(CDP.Region.x,Response.Answer.y,Response.Answer.x) %>% summarise(total = sum(as.numeric(Response.Answer.x), na.rm = T)) 
+f %>% ggplot(aes(x=Response.Answer.y, y=total, fill=CDP.Region.x)) + geom_bar(position = 'stack', stat = 'identity') + labs(x="Year", y="Total Energy/Electricity (MWh)",title="Plot 7- Total Renewable Energy/Electricity Target per Base Year by CDP Region") + theme(axis.text.x = element_text(angle = 25)) + scale_y_continuous(labels = scales::label_number_si()) + geom_text(data=subset(f,total!=0),aes(label = comma(round(total))), position = position_stack(vjust = 0.5), size =3, check_overlap = TRUE)
+
+kable(stats_e, digits = 5, format.args = list(big.mark = ",",
+  scientific = FALSE), caption = "Table 4 - Statistics for Renewable Energy / Electricity Covered by Target in Base Year by CDP Region", align = "cccccc", col.names = c('CDP Region', 'Average (MWh)', 'Standard Deviation (MWh)', 'Total (MWh)', 'Number of Targets', 'Ratio out of Total'))
+
+kable(stats_eleby, digits = 5, format.args = list(big.mark = ",",
+  scientific = FALSE), caption = "Table 5 - Statistics for Renewable Electricity Covered by Target in Base Year by CDP Region", align = "cccccc", col.names = c('CDP Region', 'Average (MWh)', 'Standard Deviation (MWh)', 'Total (MWh)', 'Number of Targets', 'Ratio out of Total'))
+```
+Plot 7 presents the total renewable energy and electricity in $MWh$ covered by target in base year aggregated by CDP Region. Table 4 summarizes the statistics for electricity and energy covered by target in base year aggregated by CDP Region. As observed the largest contributor is Southeast Asia and Oceania with ~65% contribution out of the total renewable energy and electricity covered by target of all reporting organizations in base year with 36 targets set. Next is North America with ~19% with 138 targets, followed by Europe with ~13% with 131 targets. Table 5 summarizes the statistics for renewable electricity covered by target in base year aggregated by CDP Region. As observed the largest contributor is North America with ~80% contribution out of the total renewable electricity of all reporting organizations covered by target in base year with 52 targets set. Next is Europe with ~8% with 53 targets, followed by Southeast Asia and Oceania with ~5% with 9 targets. 
+
+#### Renewable Energy / Electricity Covered by Target in Target Year in units of MW / MWh
+```{r renewable energy in target year, echo=FALSE, warning=FALSE, message=FALSE, fig.height=8, fig.width=7, fig.align='center', fig.retina=2}
+#Total renewable energy / electricity covered by target in base year (in unit specified in column 3: Energy/electricity types covered by target)
+
+etarget <- q8a %>%  filter(Column.Number == 7) %>% arrange(Account.Number, Row.Number)
+etarget$ID = seq(integer(nrow(etarget)))
+target_year <- q8a %>%  filter(Column.Number == 6) %>% arrange(Account.Number, Row.Number)
+target_year$ID = seq(integer(nrow(target_year)))
+
+etargetyear <- left_join(etarget,target_year, by='ID')
+
+stats_etarget <- etarget %>% group_by(CDP.Region) %>% summarise(avg = mean(as.numeric(Response.Answer), na.rm = TRUE), sd = sd(as.numeric(Response.Answer), na.rm=TRUE), total = sum(as.numeric(Response.Answer), na.rm = TRUE), n=n())
+
+stats_etarget$impact_ratio = (stats_etarget$total / sum(stats_etarget$total))
+
+sample_size = etarget %>% group_by(CDP.Region) %>% summarize(num=n())
+
+etarget %>% left_join(sample_size) %>%
+  mutate(myaxis = paste0(CDP.Region, "\n", "n=", num)) %>% ggplot(aes(x=myaxis, y=as.numeric(Response.Answer), fill=CDP.Region)) + geom_boxplot() +
+    theme(legend.position="none") + facet_wrap(~CDP.Region, scale="free") + scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x), labels = trans_format("log10", math_format(10^.x))) +
+    geom_jitter(color="black", size=0.5, alpha=0.9) + labs(x="CDP Region", y="Energy/Electricity (MWh)", title = "Plot 8- Boxplot of Renewable Energy/Electricity Covered \nby Target in Target Year", subtitle = "Log 10 Transformation")
+
+electricityty <- left_join(electricity_b, etarget, by='ID', keep=F)
+stats_elety <- electricityty %>% group_by(CDP.Region.y) %>% summarise(avg = mean(as.numeric(Response.Answer.y), na.rm = TRUE), sd = sd(as.numeric(Response.Answer.y), na.rm=TRUE), total = sum(as.numeric(Response.Answer.y), na.rm = TRUE), n=n())
+
+stats_elety$impact_ratio = (stats_elety$total / sum(stats_elety$total))
+```
+Plot 8 consist of boxplots that summarize the distribution of the renewable energy and electricity in $MWh$ covered by target in base year for each CDP Region. The boxplots are displayed using the log 10 transformation to stabilize the variation within CDP Regions.The organizations within the CDP Regions present a wide distribution with some organizations setting very high renewable energy / electricity targets and others low renewable energy / electricity targets.(n=the number of targets)
+
+```{r renewable energy in target year2, echo=FALSE, warning=FALSE, message=FALSE, fig.retina=2}
+f2 = etargetyear %>% group_by(CDP.Region.x,Response.Answer.x, Response.Answer.y) %>% tally() 
+f2 = na.omit(f2)
+f2 <- f2 %>% group_by(CDP.Region.x,Response.Answer.y,Response.Answer.x) %>% summarise(total = sum(as.numeric(Response.Answer.x), na.rm = T))
+f2 %>% ggplot(aes(x=Response.Answer.y, y=total, fill=CDP.Region.x)) + geom_bar(position = 'stack', stat = 'identity') + labs(x="Year", y="Total Energy/Electricity (MWh)",title="Plot 9- Total Renewable Energy/Electricity Target per Target Year by CDP Region") + theme(axis.text.x = element_text(angle = 25)) + scale_y_continuous(labels = scales::label_number_si()) + geom_text(data=subset(f2,total!=0),aes(label = comma(round(total))), position = position_stack(vjust = 0.5), size =3, check_overlap = TRUE)
+
+kable(stats_etarget, digits = 5, format.args = list(big.mark = ",",
+  scientific = FALSE), caption = "Table 6 - Statistics for Renewable Energy / Electricity Covered by Target in Target Year by CDP Region", align = "cccccc", col.names = c('CDP Region', 'Average (MWh)', 'Standard Deviation (MWh)', 'Total (MWh)', 'Number of Targets', 'Ratio out of Total'))
+
+kable(stats_elety, digits = 5, format.args = list(big.mark = ",",
+  scientific = FALSE), caption = "Table 7 - Statistics for Renewable Electricity Covered by Target in Target Year by CDP Region", align = "cccccc", col.names = c('CDP Region', 'Average (MWh)', 'Standard Deviation (MWh)', 'Total (MWh)', 'Number of Targets', 'Ratio out of Total'))
+```
+
+Plot 9 presents the total renewable energy and electricity in $MWh$ covered by target in target year aggregated by CDP Region. Table 6 summarizes the statistics for renewable electricity and energy covered by target in target year aggregated by CDP Region. As observed the largest contributor is North America with ~53% contribution out of the total energy and electricity covered by target in target year with 138 targets Next is Southeast Asia and Oceania with ~40% with 36 targets, followed by Europe with ~5% with 131 targets. The total renewable energy and electricity for all the reporting organizations in the target years is estimated to be 1,514,294,714 $MWh$ compared to 766,090,262 $MWh$ in the base years. This means that if the targets are achieved the renewable energy and electricity resources will grow by 748,204,452 $MWh$ this is almost double renewable energy and electricity than what is reported in the base years. Table 7 summarizes the statistics for renewable electricity covered by target in target year aggregated by CDP Region. As observed the largest contributor is North America with ~95% contribution out of the total renewable electricity covered by target in target year with 52 targets Next is Southeast Asia and Oceania with ~2% with 9 targets, followed by Europe with ~2% with 53 targets. The total renewable electricity for all the reporting organizations in the target years is estimated to be 821,096,899 $MWh$ compared to 146,924,348 $MWh$ in the base years. This means that if the targets are achieved the renewable electricity resources will grow by 674,172,551 $MWh$ by the last target year 2050.
+
+#### Percentage of Renewable Energy / Electricity of Total Energy or Electricity in Base Year
+```{r renewable energy percentage regions, echo=FALSE, warning=FALSE, message=FALSE, fig.retina=2}
+
+epbase <- q8a %>%  filter(Column.Number == 5) %>% arrange(Account.Number, Row.Number)
+epbase$ID = seq(integer(nrow(epbase)))
+allbase <- left_join(ebase, epbase, by = 'ID', keep=FALSE)
+allbase$all_energy <- as.numeric(allbase$Response.Answer.x, na.rm=T) / as.numeric(allbase$Response.Answer.y, na.rm=T)
+allbase$all_energy[is.infinite(allbase$all_energy)]<-NA
+
+# latin america
+la <-filter(allbase, CDP.Region.x == 'Latin America')
+la$outofall <- as.numeric(la$Response.Answer.x, na.rm=T) / sum(as.numeric(la$all_energy), na.rm = T)
+
+# europe
+e <-filter(allbase, CDP.Region.x == 'Europe')
+e$outofall <- as.numeric(e$Response.Answer.x, na.rm=T) / sum(as.numeric(e$all_energy), na.rm = T)
+
+# africa
+a <-filter(allbase, CDP.Region.x == 'Africa')
+a$outofall <- as.numeric(a$Response.Answer.x, na.rm=T) / sum(as.numeric(a$all_energy), na.rm = T)
+
+# north america
+na <-filter(allbase, CDP.Region.x == 'North America')
+na$outofall <- as.numeric(na$Response.Answer.x, na.rm=T) / sum(as.numeric(na$all_energy), na.rm = T)
+
+# middle east 
+me <-filter(allbase, CDP.Region.x == 'Middle East')
+me$outofall <- as.numeric(me$Response.Answer.x, na.rm=T) / sum(as.numeric(me$all_energy), na.rm = T)
+
+# South and West Asia
+swa <-filter(allbase, CDP.Region.x == 'South and West Asia')
+swa$outofall <- as.numeric(swa$Response.Answer.x, na.rm=T) / sum(as.numeric(swa$all_energy), na.rm = T)
+
+# Southeast Asia and Oceania
+sao <-filter(allbase, CDP.Region.x == 'Southeast Asia and Oceania')
+sao$outofall <- as.numeric(sao$Response.Answer.x, na.rm=T) / sum(as.numeric(sao$all_energy), na.rm = T)
+
+# east asia
+ea <-filter(allbase, CDP.Region.x == 'East Asia')
+ea$outofall <- as.numeric(ea$Response.Answer.x, na.rm=T) / sum(as.numeric(ea$all_energy), na.rm = T)
+
+percent_regions <- data.frame(sum(as.numeric(e$outofall),na.rm = T), sum(as.numeric(ea$outofall),na.rm = T), sum(as.numeric(na$outofall),na.rm = T), sum(as.numeric(a$outofall),na.rm = T), sum(as.numeric(la$outofall),na.rm = T), sum(as.numeric(swa$outofall),na.rm = T), sum(as.numeric(sao$outofall),na.rm = T), sum(as.numeric(me$outofall),na.rm = T))
+names(percent_regions) <- c("Europe", "East Asia", "North America", "Afirca", "Latin America", "South and West Asia", "South Asia and Oceania", "Middle East")
+percent_regions <- as.data.frame(t(percent_regions))
+percent_regions$CDP.Region <- rownames(percent_regions)
+
+ggplot(percent_regions, aes(fill=CDP.Region, y=V1/100, x=CDP.Region)) + 
+    geom_bar(stat="identity") + coord_flip() + labs(title = "Plot 10- Percentage of Renewable Energy / Electricity out of Total Energy or Electricity in Base Year", subtitle = 'CDP Region', y='Energy/Electricity %', x='') + scale_y_continuous(limits=c(0,1),labels=scales::percent_format(accuracy = 1)) + geom_text(aes(label=paste0(round(V1, 2), "%")), position = position_stack(vjust = 0.5), angle = 45, check_overlap = TRUE) 
+```
+In order to calculate the total energy for each region the following formula is used $E(t)=Re(t)/Re\%$, when $E(t)$ is total energy in $MWh$, $Re(t)$ is total renewable energy and in $MWh$ and $Re\%$ is the percentage of renewable energy. Plot 10 shows that South and West Asia has the highest percentage of renewable energy out of the total energy used in the targets set for their base years. 
+
+#### Percentage of Renewable Energy / Electricity of Total Energy or Electricity in Target Year
+```{r renewable energy percentage regions target, echo=FALSE, warning=FALSE, message=FALSE, fig.retina=2}
+#### Percentage of Renewable Energy / Electricity of Total Energy or Electricity in Target Year
+
+eptarget <- q8a %>%  filter(Column.Number == 8) %>% arrange(Account.Number, Row.Number)
+eptarget$ID = seq(integer(nrow(eptarget)))
+alltarget <- left_join(etarget, eptarget, by = 'ID', keep=FALSE)
+alltarget$all_energy <- as.numeric(alltarget$Response.Answer.x, na.rm=T) / as.numeric(alltarget$Response.Answer.y, na.rm=T)
+alltarget$all_energy[is.infinite(alltarget$all_energy)]<-NA
+
+# latin america
+lat <-filter(alltarget, CDP.Region.x == 'Latin America')
+lat$outofall <- as.numeric(lat$Response.Answer.x, na.rm=T) / sum(as.numeric(lat$all_energy), na.rm = T)
+
+# europe
+et <-filter(alltarget, CDP.Region.x == 'Europe')
+et$outofall <- as.numeric(et$Response.Answer.x, na.rm=T) / sum(as.numeric(et$all_energy), na.rm = T)
+
+# africa
+at <-filter(alltarget, CDP.Region.x == 'Africa')
+at$outofall <- as.numeric(at$Response.Answer.x, na.rm=T) / sum(as.numeric(at$all_energy), na.rm = T)
+
+# north america
+nat <-filter(alltarget, CDP.Region.x == 'North America')
+nat$outofall <- as.numeric(nat$Response.Answer.x, na.rm=T) / sum(as.numeric(nat$all_energy), na.rm = T)
+
+# middle east 
+met <-filter(alltarget, CDP.Region.x == 'Middle East')
+met$outofall <- as.numeric(met$Response.Answer.x, na.rm=T) / sum(as.numeric(met$all_energy), na.rm = T)
+
+# South and West Asia
+swat <-filter(alltarget, CDP.Region.x == 'South and West Asia')
+swat$outofall <- as.numeric(swat$Response.Answer.x, na.rm=T) / sum(as.numeric(swat$all_energy), na.rm = T)
+
+# Southeast Asia and Oceania
+saot <-filter(alltarget, CDP.Region.x == 'Southeast Asia and Oceania')
+saot$outofall <- as.numeric(saot$Response.Answer.x, na.rm=T) / sum(as.numeric(saot$all_energy), na.rm = T)
+
+# east asia
+eat <-filter(alltarget, CDP.Region.x == 'East Asia')
+eat$outofall <- as.numeric(eat$Response.Answer.x, na.rm=T) / sum(as.numeric(eat$all_energy), na.rm = T)
+
+percent_regions_t <- data.frame(sum(as.numeric(et$outofall),na.rm = T), sum(as.numeric(eat$outofall),na.rm = T), sum(as.numeric(nat$outofall),na.rm = T), sum(as.numeric(at$outofall),na.rm = T), sum(as.numeric(lat$outofall),na.rm = T), sum(as.numeric(swat$outofall),na.rm = T), sum(as.numeric(saot$outofall),na.rm = T), sum(as.numeric(met$outofall),na.rm = T))
+names(percent_regions_t) <- c("Europe", "East Asia", "North America", "Afirca", "Latin America", "South and West Asia", "South Asia and Oceania", "Middle East")
+percent_regions_t <- as.data.frame(t(percent_regions_t))
+percent_regions_t$CDP.Region <- rownames(percent_regions_t)
+
+ggplot(percent_regions_t, aes(fill=CDP.Region, y=V1/100, x=CDP.Region)) + 
+    geom_bar(stat="identity") + coord_flip() + labs(title = "Plot 11- Percentage of Renewable Energy / Electricity of Total Energy or Electricity in Target Year", subtitle = 'CDP Region', y='Energy/Electricity %', x='') + scale_y_continuous(limits = c(0,1),labels=scales::percent) + geom_text(aes(label=paste0(round(V1, 2), "%")), position = position_stack(vjust = 0.5), angle = 50, check_overlap = TRUE) 
+```
+To calculate the percentage of the renewable energy out of total energy the same equation was used as for Plot 10.
+Plot 11 presents that North America and South and West Asia have the highest percentage of renewable energy out of the total energy used in the targets set for their target years, with North America aiming to achieve almost 100% renewable energy. Compared to the base years all regions plan to have a higher percentage of renewable energy out of their total energy consumption.
+
+### Question 8.0b - Please Explain Why You Do Not Have a Renewable Energy or Electricity Target and Any Plans to Introduce One in the Future.
+
+This question is answered if an organization selected “Not intending to undertake” or “Intending to undertake” in response to question 8.0.  
+```{r why no targt 8b,echo=FALSE, warning=FALSE, message=FALSE, fig.retina=2}
+q8b <- energy_data %>% filter(Question.Number == '8.0b')
+q8b$Answer <- ifelse(q8b$Response.Answer != 'Target already achieved' & q8b$Response.Answer != 'Energy / electricity is not within the city jurisdiction' & q8b$Response.Answer != 'Lack of renewable energy potential within the city' & q8b$Response.Answer != 'Lack of funding' & q8b$Response.Answer != 'The grid is not controlled by the city'& q8b$Response.Answer != 'Renewable energy not prioritized'& q8b$Response.Answer != 'Target is under development / consideration', 'Other', q8b$Response.Answer)
+
+q8b %>% filter(Column.Number== 1) %>% 
+  group_by(CDP.Region, Answer) %>%
+  tally() %>%
+  ggplot(aes(x=CDP.Region ,y=n, fill=Answer)) +
+  geom_bar(position='dodge', stat='identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, check_overlap = TRUE) +
+  labs(x="CDP Region", y="Number of Organizations",title="Plot 12- Please explain why you do not have a renewable energy or electricity target and any plans to introduce one in the future.", subtitle="Aggregated by CDP Region") + 
+  theme(axis.text.x = element_text(angle = 25)) 
+
+```
+In plot 12, 162 organizations reported different reasons to why they do not have a renewable energy or electricity target. 52 organizations answered that they already have a target under development or consideration, 29 stated that the grid is not controlled by the city, 21 mentioned the reason is due to lack of funding, 18 said the reason is that the energy / electricity is not within the city jurisdiction, 8 stated that there is a lack of renewable energy potential within the city, 7 said that renewable energy is currently not prioritized, 2 said that their target has been achieved, 13 gave different reasons, and 12 did not have their answer reported.  
+
+### Question 8.1 - Please Indicate the Source Mix of Electricity Consumed in your City
+```{r mix o electricity 8.1, echo=FALSE, warning=FALSE, message=FALSE, fig.retina=2}
+
+q82 <- energy_data %>% filter(Question.Number == '8.2') %>% arrange(Account.Number, CDP.Region, Column.Number)
+
+q82_regions <- q82 %>% group_by(CDP.Region, Column.Name, Response.Answer) %>% summarise()
+
+q82_regions <- aggregate(as.numeric(q82_regions$Response.Answer), by=list(CDP.Region=q82_regions$CDP.Region,Type=q82_regions$Column.Name), FUN=sum, na.rm = TRUE)
+
+q82_regions<-q82_regions[!(q82_regions$Type=="Total - please ensure this equals 100%"),]
+
+# latin america
+lamix <-filter(q82_regions, CDP.Region == 'Latin America')
+lamix$outofall <- as.numeric(lamix$x) / sum(as.numeric(lamix$x), na.rm = T)
+
+# europe
+emix <-filter(q82_regions, CDP.Region == 'Europe')
+emix$outofall <- as.numeric(emix$x) / sum(as.numeric(emix$x), na.rm = T)
+
+# africa
+amix <-filter(q82_regions, CDP.Region == 'Africa')
+amix$outofall <- as.numeric(amix$x) / sum(as.numeric(amix$x), na.rm = T)
+
+# north america
+namix <-filter(q82_regions, CDP.Region == 'North America')
+namix$outofall <- as.numeric(namix$x) / sum(as.numeric(namix$x), na.rm = T)
+
+# middle east 
+memix <-filter(q82_regions, CDP.Region == 'Middle East')
+memix$outofall <- as.numeric(memix$x) / sum(as.numeric(memix$x), na.rm = T)
+
+# South and West Asia
+swamix <-filter(q82_regions, CDP.Region == 'South and West Asia')
+swamix$outofall <- as.numeric(swamix$x) / sum(as.numeric(swamix$x), na.rm = T)
+
+# Southeast Asia and Oceania
+saomix <-filter(q82_regions, CDP.Region == 'Southeast Asia and Oceania')
+saomix$outofall <- as.numeric(saomix$x) / sum(as.numeric(saomix$x), na.rm = T)
+
+# east asia
+eamix <-filter(q82_regions, CDP.Region == 'East Asia')
+eamix$outofall <- as.numeric(eamix$x) / sum(as.numeric(eamix$x), na.rm = T)
+
+q82_regions <- rbind(lamix,emix,eamix,saomix,swamix,memix,namix,amix)
+
+ggplot(q82_regions, aes(fill=Type, y=outofall, x=CDP.Region)) + 
+    geom_bar(position="fill", stat="identity") + labs(title = "Plot 13- Energy Source Percentage of Electricity Consumed", subtitle = 'CDP Region', y='Energy %', x='CDP Region') + scale_y_continuous(limits = c(0,1),labels=scales::percent) + geom_text(data=subset(q82_regions,outofall!=0),aes(label=paste0(round(outofall*100, 2), "%")), position = position_fill(vjust = 0.5), size=2.5, check_overlap = TRUE) + theme(axis.text.x = element_text(angle = 25))
+
+```
+Plot 13 describes the percentage of each energy source out of all the electricity mix used in every CDP Region. The values are based on answers from 272 organizations and aggregated by CDP Region.
+
+### Question 8.2 - What Scale is the Electricity Mix Data Reported Above?
+```{r what scale is 8.1 (8.2),echo=FALSE, warning=FALSE, message=FALSE, fig.retina=2}
+q82b <- energy_data %>% filter(Question.Number == '8.3')
+
+q82b$Answer <- ifelse(q82b$Response.Answer != 'Local government operations energy mix reported' & q82b$Response.Answer != 'City-wide energy mix reported' & q82b$Response.Answer != 'Regional/State energy mix reported' & q82b$Response.Answer != 'National energy mix reported' & q82b$Response.Answer != 'Utility energy mix reported' & q82b$Response.Answer != 'We do not have access to energy data (please specify)', 'Other', q82b$Response.Answer)
+
+q82b %>% group_by(CDP.Region, Answer) %>%
+  tally() %>%
+  ggplot(aes(x=CDP.Region ,y=n, fill=Answer)) +
+  geom_bar(position='dodge', stat='identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
+  labs(x="CDP Region", y="Number of Targets",title="Plot 14- The Scale of the Electricity Mix Data Reported Above", subtitle="Aggregated by CDP Region") + 
+  theme(axis.text.x = element_text(angle = 25))
+```
+Plot 14 describes 272 organizations reporting regarding the scale of the energy sources of the electricity mix presented in Plot 13. 106 organizations reported that this is a city-wide energy mix and 71 reported that this is a national energy mix. In North America many organizations reported about a different scale, most stated that it is a state or provincial energy mix. 
+
+### Question 8.4 - How Much (in MW capacity) Renewable Energy is Installed Within the City Boundary in the Following Categories?
+```{r q85, echo=FALSE, message=FALSE, warning=FALSE, fig.retina=2}
+# 8.4 How much (in MW capacity) renewable energy is installed within the city boundary in the following categories?
+
+q85 <- energy_data %>% filter(Question.Number == '8.5' & Column.Number == 1) %>% arrange(Account.Number, CDP.Region, Row.Number)
+
+q85_regions <- q85 %>% group_by(CDP.Region, Row.Name, Response.Answer) %>% summarise()
+
+q85_regions <- aggregate(as.numeric(q85_regions$Response.Answer), by=list(CDP.Region=q85_regions$CDP.Region,Type=q85_regions$Row.Name), FUN=sum, na.rm = TRUE)
+
+# latin america
+laRE <-filter(q85_regions, CDP.Region == 'Latin America')
+laRE$outofall <- as.numeric(laRE$x) / sum(as.numeric(laRE$x), na.rm = T)
+
+# europe
+eRE <-filter(q85_regions, CDP.Region == 'Europe')
+eRE$outofall <- as.numeric(eRE$x) / sum(as.numeric(eRE$x), na.rm = T)
+
+# africa
+aRE <-filter(q85_regions, CDP.Region == 'Africa')
+aRE$outofall <- as.numeric(aRE$x) / sum(as.numeric(aRE$x), na.rm = T)
+
+# north america
+naRE <-filter(q85_regions, CDP.Region == 'North America')
+naRE$outofall <- as.numeric(naRE$x) / sum(as.numeric(naRE$x), na.rm = T)
+
+# middle east 
+meRE <-filter(q85_regions, CDP.Region == 'Middle East')
+meRE$outofall <- as.numeric(meRE$x) / sum(as.numeric(meRE$x), na.rm = T)
+
+# South and West Asia
+swaRE <-filter(q85_regions, CDP.Region == 'South and West Asia')
+swaRE$outofall <- as.numeric(swaRE$x) / sum(as.numeric(swaRE$x), na.rm = T)
+
+# Southeast Asia and Oceania
+saoRE <-filter(q85_regions, CDP.Region == 'Southeast Asia and Oceania')
+saoRE$outofall <- as.numeric(saoRE$x) / sum(as.numeric(saoRE$x), na.rm = T)
+
+# east asia
+eaRE <-filter(q85_regions, CDP.Region == 'East Asia')
+eaRE$outofall <- as.numeric(eaRE$x) / sum(as.numeric(eaRE$x), na.rm = T)
+
+q85_regions <- rbind(eaRE,saoRE,swaRE,meRE,naRE,aRE,eRE,laRE)
+
+ggplot(q85_regions, aes(fill=Type, y=outofall, x=CDP.Region)) + 
+    geom_bar(position="fill", stat="identity") + labs(title = "Plot 15- Renewable Energy Percentage Installed in the Following Categories", subtitle = 'CDP Region', y='Renewable Energy %', x='CDP Region') + scale_y_continuous(limits = c(0,1),labels=scales::percent) + geom_text(data=subset(q85_regions,outofall!=0.00),aes(label=paste0(round(outofall*100, 2), "%")), position = position_stack(vjust = 0.5), size=3, check_overlap = TRUE) + theme(axis.text.x = element_text(angle = 25))
+
+```
+Plot 15 describes out of the total percentage of renewable energy, how much of the following sources is used in each CDP Region. The sources are wind, solar thermal, solar photovoltaic (PV), renewable district heat/cooling, ground or water sources and other where the organizations specify the source they use.  In Latin America Brazil reported a large amount of renewable energy under the other category but with no specification of what kind of renewable energy source they use. 
+
+### Question 8.5 - Does Your City Have a Target to Increase Energy Efficiency?
+```{r q86, echo=FALSE, message=FALSE, warning=FALSE, fig.retina=2}
+# Does your city have a target to increase energy efficiency?
+
+energy_data %>% filter(Question.Number == "8.6") %>% 
+  group_by(CDP.Region, Response.Answer) %>%
+  tally() %>%
+  ggplot(aes(x=CDP.Region ,y=n, fill=Response.Answer)) +
+  geom_bar(position='dodge', stat='identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
+  labs(x="CDP Region", y="Number of Organizations",title="Plot 16- Does Your City Have a Target to Increase Energy Efficiency?", subtitle="Aggregated by CDP Region") + 
+  theme(axis.text.x = element_text(angle = 25)) 
+```
+In plot 16, 200 organizations out of 598 reported that they have a target to increase their energy efficiency. 167 stated that they have a target in progress, 108 are intending to undertake in the next 2 years, 80 organizations reported that they do not know, and 43 are not intending to undertake energy efficiency targets.
+  
+### Question 8.5a - Please provide details on your city’s energy efficiency targets.
+This question only applies to the organization that stated that they have a target to increase their energy efficiency.
+
+#### Scale of Target to Increase Energy Efficiency
+```{r 8.6a scale, echo=FALSE, fig.retina=2}
+# q8.6a
+q86a <- energy_data %>% filter(Question.Number == '8.6a') %>% arrange(Account.Number, Column.Number, Row.Number)
+
+scale6a <- q86a %>% filter(Column.Number == 1)
+
+# scale plot
+q86a %>% filter(Column.Number == 1) %>% group_by(CDP.Region, Response.Answer) %>% tally() %>% ggplot(aes(x=CDP.Region ,y=n, fill=Response.Answer)) + geom_bar(position='dodge', stat='identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) + labs(x="CDP Region", y="Number of Targets",title="Plot 17- Scale of Target Implementation") + theme(axis.text.x = element_text(angle = 25))
+```
+The majority of the energy efficency targets are set to be implemented in 117 cities compared to 93 local governments and for 36 targets there is no stated scale of implementation. It is important to acknowledge that some organizations have targets for both city-wide and local government operations scale e.g. City of Cape Town, South Africa.
+
+#### Energy Efficiency Type Covered by Target
+```{r Energy efficiency type covered by target, echo=FALSE, warning=FALSE, message=FALSE, fig.retina=2}
+
+eetarget <- q86a %>% filter(Column.Number == 2)
+
+#Energy efficiency type covered by target
+eetarget$Answer <- ifelse(eetarget$Response.Answer != 'Reduce total energy produced (in MWh)' & eetarget$Response.Answer != 'Reduce total energy consumed (in MWh)', 'Other', eetarget$Response.Answer)
+world2$Country[world2$Country == 'Vietnam'] = "Viet Nam"
+eetarget$Answer[eetarget$Answer == 'Reduce total energy produced (in MWh)'] = 'Reduce total energy produced of non renewable energy sources(in MWh)'
+
+eetarget %>% group_by(CDP.Region, Answer) %>%
+  tally() %>%
+  ggplot(aes(x=CDP.Region ,y=n, fill=Answer)) +
+  geom_bar(position='dodge', stat='identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size =3, check_overlap = TRUE) +
+  labs(x="CDP Region", y="Number of Targets",title="Plot 18- Energy Efficiency Type Covered by Target", subtitle="Aggregated by CDP Region") + 
+  theme(axis.text.x = element_text(angle = 25))
+
+target_ee <- eetarget %>% group_by(Country) %>% drop_na() %>%
+  tally()
+
+x2 <-left_join(countries_regions, world2, by='Country', keep=FALSE)
+y2 <-left_join(target_ee, x2, by='Country', keep=FALSE)
+y2 <- st_sf(y2, crs = 4236)
+y2 <- st_transform(y2, 4236)
+
+y2 %>% group_by(CDP.Region) %>% summarise(total=sum(n)) %>% ggplot() +
+  geom_sf(aes(fill = total)) + borders('world') +
+  scale_fill_viridis_c(name="Number of Targets", direction = -1) + labs(x = NULL, y = NULL, 
+       title = "Map 2- Number of Energy Efficiency Targets", 
+       subtitle = "CDP Region", 
+       caption = "Geometries: 'rnaturalearth' package, 2018") + 
+  theme(legend.position = "bottom")
+
+```
+Plot 18 describes the type of target the organizations have set for their energy efficency goals.
+In total all the CDP Regions have set 204 targets, most of the targets are to reduce all energy consumed in $MWh$. Some of the reporting organizations have reported more than one target e.g. Lisbon, Portugal and Tokyo, Japan. Most of the organizations that reported more than one target belong to North America, Europe and Southeast Asia and Oceania. Some targets that were stated as other include reducing $CO_{2}$ emissions and reducing energy consumption of buildings. 
+Map 2 is colored depending on the number of energy efficiency targets set for each CDP Region, Europe leads with a total of 68 targets, North America with 62 targets, Latin America with 23 targets, Africa with 21 targets, Southeast Asia and Oceania with 17 targets, East Asia with 8 targets, South and West Asia with 4 targets and the Middle East with 1 target. 
+
+#### Base and Target Year for Energy Efficiency Targets
+```{r target and base year ee , echo=FALSE, fig.retina=2}
+#target and base year 
+q86a %>% filter(Column.Number == 3) %>% group_by(CDP.Region, Response.Answer)%>% tally() %>% ggplot(aes(x=Response.Answer, y=n, fill=CDP.Region)) + geom_bar( position = 'dodge', stat = 'identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25,  size =3,check_overlap = TRUE) + labs(x="Year", y="Number of Targets",title="Plot 19- Base Year for Energy Efficiency Targets by CDP Region") + theme(axis.text.x = element_text(angle = 25))
+
+q86a %>% filter(Column.Number == 5) %>% group_by(CDP.Region, Response.Answer)%>% tally() %>% ggplot(aes(x=Response.Answer, y=n, fill=CDP.Region)) + geom_bar(position = 'dodge', stat = 'identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size =3,check_overlap = TRUE) + labs(x="Year", y="Number of Targets",title="Plot 20- Target Year for Energy Efficiency Targets by CDP Region") + theme(axis.text.x = element_text(angle = 25))
+
+```
+Plot 19 describes the number of targets set for each base year reported by organizations and aggregated by CDP Regions. It is clear that organizations based in Europe and North America have started setting targets earlier than the rest of the reporting regions. The last region to set energy and electricity target is the Middle East. 26 out of 191 targets base year was in 2016, 55 organizations did not report their targets base year.
+
+Plot 20 describes what is the implementation deadline year for the targets set. 54 out of 177 targets are intended to be implemented until 2020, with the majority of targets set by Europe. 35 out of 177 targets are intended to be implemented until 2030, 21  targets are intended to be implemented until 2025 and 20 targets are intended to be implemented until 2050. 
+
+#### Total Energy Consumed/Produced Covered by Target in Base Year 
+```{r energy consumed/produced covered in base year, echo=FALSE, warning=FALSE, message=FALSE, fig.height=8, fig.width=7, fig.align='center', fig.retina=2}
+#Total energy consumed/produced covered by target in base year (in unit specified in column 2)
+
+ee_base <- q86a %>%  filter(Column.Number == 4) %>% arrange(Account.Number, Row.Number)
+ee_base$ID = seq(integer(nrow(ee_base)))
+ee_base_year <- q86a %>%  filter(Column.Number == 3) %>% arrange(Account.Number, Row.Number)
+ee_base_year$ID = seq(integer(nrow(ee_base_year)))
+
+ee_basetargetyear <- left_join(ee_base,ee_base_year, by='ID')
+
+stats_ee_base <- ee_base %>% group_by(CDP.Region) %>% summarise(avg = mean(as.numeric(Response.Answer), na.rm = TRUE), sd = sd(as.numeric(Response.Answer), na.rm=TRUE), total = sum(as.numeric(Response.Answer), na.rm = TRUE), n=n())
+
+stats_ee_base$impact_ratio = (stats_ee_base$total / sum(stats_ee_base$total))
+
+
+sample_size_ee = ee_base %>% group_by(CDP.Region) %>% summarize(num=n())
+
+ee_base %>% filter(CDP.Region != 'Middle East') %>% left_join(sample_size) %>%
+  mutate(myaxis = paste0(CDP.Region, "\n", "n=", num)) %>% ggplot(aes(x=myaxis, y=as.numeric(Response.Answer), fill=CDP.Region)) + geom_boxplot() +
+    theme(legend.position="none") + facet_wrap(~CDP.Region, scale="free") + scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x), labels = trans_format("log10", math_format(10^.x))) +
+    geom_jitter(color="black", size=0.5, alpha=0.9) + labs(x="CDP Region", y="Energy/Electricity (MWh)", title = "Plot 21- Boxplot of Energy Consumed/Produced Covered \nby Target in Base Year", subtitle = "Log 10 Transformation")
+```
+Plot 21 consist of boxplots that summarize the distribution of the energy consumed or produced in $MWh$ covered by target in base year for each CDP Region. The boxplots are displayed using the log 10 transformation to stabilize the variation within CDP Regions.The organizations within the CDP Regions present a wide distribution with some organizations setting very high renewable energy / electricity targets and others low renewable energy / electricity targets. The organizations from the Middle East are not displayed because no data was available.(n=the number of targets) 
+
+```{r energy consumed/produced covered in base year2,echo=FALSE, warning=FALSE, message=FALSE}
+# Plot 22 presents the total energy consumed or produced in $MWh$ covered by target in base year aggregated by CDP Region.
+# f3 = ee_basetargetyear %>% group_by(CDP.Region.x,Response.Answer.x, Response.Answer.y) %>% tally() 
+# f3 = na.omit(f3)
+# f3 <- f3 %>% group_by(CDP.Region.x,Response.Answer.y,Response.Answer.x) %>% summarise(total = sum(as.numeric(Response.Answer.x), na.rm = T))
+# f3 %>% ggplot(aes(x=Response.Answer.y, y=total, fill=CDP.Region.x)) + geom_bar(position = 'stack', stat = 'identity') + labs(x="Year", y="Total Energy/Electricity (MWh)",title="Plot 22- Energy Consumed/Produced Covered by Target per Base Year by CDP Region") + theme(axis.text.x = element_text(angle = 25)) + scale_y_continuous(labels = scales::label_number_si()) + geom_text(data=subset(f2,total!=0),aes(label = comma(round(total))), position = position_stack(vjust = 0.5), size =3, check_overlap = TRUE)
+
+kable(stats_ee_base, digits = 5, format.args = list(big.mark = ",",
+  scientific = FALSE), caption = "Table 8 - Statistics for Energy Consumed/Produced Covered by Target in Base Year", align = "cccccc", col.names = c('CDP Region', 'Average (MWh)', 'Standard Deviation (MWh)', 'Total (MWh)', 'Number of Targets', 'Ratio out of Total'))
+```
+Table 8 summarizes the statistics for electricity and energy covered by target in target year aggregated by CDP Region. As observed the largest contributor is East Asia with ~80% contribution out of the total energy consumed or produced covered by target in base year with 10 targets Next is North America with ~17% with 78 targets, followed by Southeast Asia and Oceania with ~1% with 21 targets.
+
+#### Total Energy Consumed/Produced Covered by Target in Target Year 
+```{r energy consumed/produced covered in target year, echo=FALSE, warning=FALSE, message=FALSE, fig.height=8, fig.width=7, fig.align='center',fig.retina=2}
+#Total energy consumed/produced covered by target in target year (in unit specified in column 2)
+
+ee_target <- q86a %>%  filter(Column.Number == 6) %>% arrange(Account.Number, Row.Number)
+ee_target$ID = seq(integer(nrow(ee_target)))
+ee_target_year <- q86a %>%  filter(Column.Number == 5) %>% arrange(Account.Number, Row.Number)
+ee_target_year$ID = seq(integer(nrow(ee_target_year)))
+
+ee_targettargetyear <- left_join(ee_target,ee_target_year, by='ID')
+
+stats_ee_target <- ee_target %>% group_by(CDP.Region) %>% summarise(avg = mean(as.numeric(Response.Answer), na.rm = TRUE), sd = sd(as.numeric(Response.Answer), na.rm=TRUE), total = sum(as.numeric(Response.Answer), na.rm = TRUE), n=n())
+
+stats_ee_target$impact_ratio = (stats_ee_target$total / sum(stats_ee_target$total))
+
+sample_size_eet = ee_target %>% group_by(CDP.Region) %>% summarize(num=n())
+
+ee_target %>% filter(CDP.Region != 'Middle East') %>% left_join(sample_size) %>%
+  mutate(myaxis = paste0(CDP.Region, "\n", "n=", num)) %>% ggplot(aes(x=myaxis, y=as.numeric(Response.Answer), fill=CDP.Region)) + geom_boxplot() +
+    theme(legend.position="none") + facet_wrap(~CDP.Region, scale="free") + scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x), labels = trans_format("log10", math_format(10^.x))) +
+    geom_jitter(color="black", size=0.5, alpha=0.9) + labs(x="CDP Region", y="Energy/Electricity (MWh)", title = "Plot 22- Boxplot of Energy Consumed/Produced Covered by Target in Target Year", subtitle = "Log 10 Transformation")
+```
+Plot 22 consist of boxplots that summarize the distribution of the energy consumed or produced in $MWh$ covered by target in target year for each CDP Region. The boxplots are displayed using the log 10 transformation to stabilize the variation within CDP Regions.The organizations within the CDP Regions present a wide distribution with some organizations setting very high renewable energy / electricity targets and others low renewable energy / electricity targets. The organizations from the Middle East are not displayed because no data was available.(n=the number of targets)
+
+```{r energy consumed/produced covered in target year2, echo=FALSE, warning=FALSE, message=FALSE}
+# Plot 24 presents the total energy consumed or produced in $MWh$ covered by target in target year aggregated by CDP Region. 
+# f4 = ee_targettargetyear %>% group_by(CDP.Region.x,Response.Answer.x, Response.Answer.y) %>% tally() 
+# f4 = na.omit(f4)
+# f4 <- f4 %>% group_by(CDP.Region.x,Response.Answer.y,Response.Answer.x) %>% summarise(total = sum(as.numeric(Response.Answer.x), na.rm = T))
+# f4 %>% ggplot(aes(x=Response.Answer.y, y=total, fill=CDP.Region.x)) + geom_bar(position = 'stack', stat = 'identity') + labs(x="Year", y="Total Energy/Electricity (MWh)",title="Plot 24- Energy Consumed/Produced Covered by Target per Target Year by CDP Region") + theme(axis.text.x = element_text(angle = 25)) + scale_y_continuous(labels = scales::label_number_si()) + geom_text(data=subset(f2,total!=0),aes(label = comma(round(total))), position = position_stack(vjust = 0.5), size =3, check_overlap = TRUE)
+
+kable(stats_ee_target, digits = 5, format.args = list(big.mark = ",",
+  scientific = FALSE), caption = "Table 9 - Statistics for Energy Consumed/Produced Covered by Target in Target Year", align = "cccccc", col.names = c('CDP Region', 'Average (MWh)', 'Standard Deviation (MWh)', 'Total (MWh)', 'Number of Targets', 'Ratio out of Total'))
+```
+Table 9 summarizes the statistics for energy consumed or produced covered by target in target year aggregated by CDP Region. As observed the largest contributor is East Asia with ~82% contribution out of the total energy consumed or produced covered by target in target year with 10 targets. Next is North America with ~14% with 78 targets, followed by Southeast Asia and Oceania with ~2% with 21 targets. The total energy consumed or produced for all the reporting organizations in the target years is estimated to be 40,628,193,734 $MWh$ compared to 49,427,355,680 $MWh$ in the base years. This means that if the targets are achieved the energy consumption and production will decline by 8,799,161,946 $MWh$.
+
+```{r Percentage of energy efficiency improvement, include=FALSE,echo=FALSE, warning=FALSE, message=FALSE}
+#### Percentage of energy efficiency improvement
+# eeptarget <- q86a %>%  filter(Column.Number == 7) %>% arrange(Account.Number, Row.Number)
+# eeptarget$ID = seq(integer(nrow(eeptarget)))
+# alleetarget <- left_join(ee_target, eeptarget, by = 'ID', keep=FALSE)
+# alleetarget$all_energy <- as.numeric(alleetarget$Response.Answer.x, na.rm=T) / as.numeric(alleetarget$Response.Answer.y, na.rm=T)
+# alleetarget$all_energy[is.infinite(alleetarget$all_energy)]<-NA
+# 
+# 
+# # latin america
+# laeep <-filter(alleetarget, CDP.Region.x == 'Latin America')
+# laeep$outofall <- as.numeric(laeep$Response.Answer.x) / sum(as.numeric(laeep$all_energy), na.rm = T)
+# 
+# # europe
+# eeep <-filter(alleetarget, CDP.Region.x == 'Europe')
+# eeep$outofall <- as.numeric(eeep$Response.Answer.x) / sum(as.numeric(eeep$all_energy), na.rm = T)
+# 
+# # africa
+# aeep <-filter(alleetarget, CDP.Region.x == 'Africa')
+# aeep$outofall <- as.numeric(aeep$Response.Answer.x) / sum(as.numeric(aeep$all_energy), na.rm = T)
+# 
+# # north america
+# naeep <-filter(alleetarget, CDP.Region.x == 'North America')
+# naeep$outofall <- as.numeric(naeep$Response.Answer.x) / sum(as.numeric(naeep$all_energy), na.rm = T)
+# 
+# # middle east 
+# meeep <-filter(alleetarget, CDP.Region.x == 'Middle East')
+# meeep$outofall <- as.numeric(meeep$Response.Answer.x) / sum(as.numeric(meeep$all_energy), na.rm = T)
+# 
+# # South and West Asia
+# swaeep <-filter(alleetarget, CDP.Region.x == 'South and West Asia')
+# swaeep$outofall <- as.numeric(swaeep$Response.Answer.x) / sum(as.numeric(swaeep$all_energy), na.rm = T)
+# 
+# # Southeast Asia and Oceania
+# saoeep <-filter(alleetarget, CDP.Region.x == 'Southeast Asia and Oceania')
+# saoeep$outofall <- as.numeric(saoeep$Response.Answer.x) / sum(as.numeric(saoeep$all_energy), na.rm = T)
+# 
+# # east asia
+# eaeep <-filter(alleetarget, CDP.Region.x == 'East Asia')
+# eaeep$outofall <- as.numeric(eaeep$Response.Answer.x) / sum(as.numeric(eaeep$all_energy), na.rm = T)
+# 
+# percent_regions_eep <- data.frame(sum(as.numeric(eeep$outofall),na.rm = T), sum(as.numeric(eaeep$outofall),na.rm = T), sum(as.numeric(naeep$outofall),na.rm = T), sum(as.numeric(aeep$outofall),na.rm = T), sum(as.numeric(laeep$outofall),na.rm = T), sum(as.numeric(swaeep$outofall),na.rm = T), sum(as.numeric(saoeep$outofall),na.rm = T), sum(as.numeric(meeep$outofall),na.rm = T))
+# names(percent_regions_eep) <- c("Europe", "East Asia", "North America", "Afirca", "Latin America", "South and West Asia", "South Asia and Oceania", "Middle East")
+# percent_regions_eep <- as.data.frame(t(percent_regions_eep))
+# percent_regions_eep$CDP.Region <- rownames(percent_regions_eep)
+# 
+# ggplot(percent_regions_eep, aes(fill=CDP.Region, y=V1/100, x=CDP.Region)) + 
+#     geom_bar( stat="identity") + coord_flip() + labs(title = "Plot 25- Percentage of Energy Efficiency Improvement in Target Year Compared to Base Year Levels", subtitle = 'CDP Region', y='Energy/Electricity %', x='') + scale_y_continuous(limits = c(0,1),labels=scales::percent) + geom_text(aes(label=paste0(round(V1, 2), "%")), position = position_stack(vjust = 0.5), angle = 50, check_overlap = TRUE) 
+```
+```{r Plans to meet target, include=FALSE,echo=FALSE, warning=FALSE, message=FALSE}
+# Plans to meet target (include details on types of energy in thermal /electricity)
+plans2 <- q86a %>%  filter(Column.Number == 9)
+```
+
+#### Please Indicate to Which Energy Sector(s) the Target Applies (Multiple choice)
+```{r which energy sector(s) the target applies, echo=FALSE, warning=FALSE, message=FALSE}
+# Please indicate to which energy sector(s) the target applies (Multiple choice)
+esector <- q86a %>% filter(Column.Number == 10)
+
+#Energy efficiency type covered by target
+esector$Answer <- ifelse(esector$Response.Answer != 'Commercial buildings' & esector$Response.Answer != 'Energy industry' & esector$Response.Answer != 'Heating and cooling supply' & esector$Response.Answer != 'Industrial facilities' & esector$Response.Answer != 'Public facility' & esector$Response.Answer != 'Residential buildings' & esector$Response.Answer != 'Transport', 'Other', esector$Response.Answer)
+
+esector %>% group_by(CDP.Region, Answer) %>%
+  tally() %>%
+  ggplot(aes(x=CDP.Region ,y=n, fill=Answer)) +
+  geom_bar(position='dodge', stat='identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size =3, check_overlap = TRUE) +
+  labs(x="CDP Region", y="Number of Targets",title="Plot 23- Energy Efficiency Type Covered by Target", subtitle="Aggregated by CDP Region") + 
+  theme(axis.text.x = element_text(angle = 25))
+```
+Plot 23 displays in which energy sectors the energy efficiency targets are aimed at. This questions was a multiple choice question, meaning that one target may apply to many different sectors.
+
+### Question 8.5b - Please explain why you do not have an energy efficiency target and any plans to introduce one in the future.
+
+This question only appears if the organization selected “Not intending to undertake” or “Intending to undertake” in response to question 8.5.
+```{r why you do not have an energy efficiency target, echo=FALSE, warning=FALSE, message=FALSE}
+# why you do not have an energy efficiency target and any plans to introduce one in the future
+q86b <- filter(energy_data, Question.Number == '8.6b' & Column.Number == 1)
+
+q86b$Answer <- ifelse(q86b$Response.Answer != 'Target already achieved' & q86b$Response.Answer != 'Lack of renewable energy potential within the city' & q86b$Response.Answer != 'Renewable energy not prioritized' & q86b$Response.Answer != 'Target is under development / consideration' & q86b$Response.Answer != 'The grid is not controlled by the city' & q86b$Response.Answer != 'Lack of funding' & q86b$Response.Answer != 'Energy / electricity is not within the city jurisdiction', 'Other', q86b$Response.Answer)
+
+q86b %>% group_by(CDP.Region, Answer) %>%
+  tally() %>%
+  ggplot(aes(x=CDP.Region ,y=n, fill=Answer)) +
+  geom_bar(position='dodge', stat='identity') + geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25, size =3, check_overlap = TRUE) +
+  labs(x="CDP Region", y="Number of Organizations",title="Plot 24- Why You do not Have an Energy Efficiency Target and any Plans to Introduce One in the Future", subtitle="Aggregated by CDP Region") + 
+  theme(axis.text.x = element_text(angle = 25))
+```
+In plot 24, 138 organizations reported different reasons to why they do not have an energy efficiency target. 53 organizations answered that they already have a target under development or consideration, 21 stated that the grid is not controlled by the city, 18 mentioned the reason is due to lack of funding, 14 said the reason is that the energy / electricity is not within the city jurisdiction, 4 stated that there is a lack of renewable energy potential within the city, 2 said that renewable energy is currently not prioritized, 1 stated that the target has been achieved, 25 gave different reasons, and 13 did not have their answer reported.
+
+***
+
+### Conclusions
+
+* Organizations based in North America and Europe have reported more about their renewable energy and energy efficiency targets and plans to meet these targets.
+* Southeast Asia and Oceania have set less targets compared to North America and Europe but plan to have a larger percentage of renewable energy out of all their energy.
+* If the renewable electricity targets are achieved by 2050 (the last target year), the renewable electricity resources will grow by 674,172,551 $MWh$.
+* If the renewable energy and electricity targets are achieved by 2050 (the last target year), the renewable energy and electricity  resources will grow by almost double the renewable energy and electricity  that was reported in the base years.
+* If the efficiency targets are achieved by 2050 (the last target year), the energy consumption and production of all reporting organizations will decline by 8,799,161,946 $MWh$.
+
+*It is important to acknowledge that for part of the answers and organizations data is not available, this may affect the analysis conclusions*
+
+***
+
+### References
+* CDP cities and regions data. Retrieved 2 October 2020, from <https://data.cdp.net/>
+* Energy Efficiency | EESI - Environmental and Energy Study Institute. Retrieved 2 October 2020, from <https://www.eesi.org/topics/energy-efficiency/description>
+* Shinn, L. (2018). Renewable Energy: The Clean Facts. Retrieved 2 October 2020, from <https://www.nrdc.org/stories/renewable-energy-clean-facts>
+
