@@ -12,7 +12,7 @@ output:
 ---
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-setwd("C:\\Users\\einav\\Dropbox\\Munster\\ICLEI")
+setwd("C:\\Users\\....")
 # install.packages('dplyr')
 # install.packages('ggplot2')
 # install.packages('sf')
