@@ -14,3 +14,6 @@ The analysis was conducted with RStudio and the following libraries:
 * rgeos
 
 *The data is available on - CDP cities and regions data <https://data.cdp.net/>*
+
+-------------------------
+*License MIT*
