@@ -134,7 +134,7 @@ Plot 9 presents the total renewable energy and electricity in MWh covered by tar
 
 <img src="Energy_Trends_files/figure-docx/renewable energy percentage regions-1.png"/> 
 
-In order to calculate the total energy for each region the following formula is used $$E(t)=Re(t)/Re\%$$, when $$E(t)$$ is total energy in MWh, $$Re(t)$$ is total renewable energy and in MWh and $$Re\%$$ is the percentage of renewable energy. Plot 10 shows that South and West Asia has the highest percentage of renewable energy out of the total energy used in the targets set for their base years. 
+In order to calculate the total energy for each region the following formula is used $$E_t=Re_t/Re\%$$, when $$E_t$$ is total energy in MWh, $$Re_t$$ is total renewable energy and in MWh and $$Re\%$$ is the percentage of renewable energy. Plot 10 shows that South and West Asia has the highest percentage of renewable energy out of the total energy used in the targets set for their base years. 
 
 #### Percentage of Renewable Energy / Electricity of Total Energy or Electricity in Target Year 
 
